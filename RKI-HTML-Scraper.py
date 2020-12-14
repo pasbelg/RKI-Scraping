@@ -1,7 +1,6 @@
 import pandas as pd
 import requests
 from datetime import datetime
-import unicodedata
 
 import mysql.connector
 def conDB():
@@ -35,7 +34,9 @@ def insertData(tablename, data):
       sql = sql + 'states (Bundesland) select "'+data+'" WHERE NOT EXISTS (SELECT * FROM states WHERE Bundesland = "'+data+'");'  
     elif tablename == 'cases':
       print(data)
-      sql = sql + 'cases (ID, bundeslandID, anzahl, tote, date) select "'+data+'" WHERE NOT EXISTS (SELECT * FROM cases WHERE date != CURDATE());'
+      sql = sql + 'cases (bundeslandID, anzahl, tote) VALUES '+data+';'
+      #sql = sql + 'cases (bundeslandID, anzahl, tote) VALUES '+data+';'
+      print(sql)
     else:
       return 0 
     mycursor.execute(sql)
@@ -69,3 +70,14 @@ for case in cases:
 
 #for bundesland in liste:
 #  insertData('states', states)
+'''
+#query um Duplikate zu entfernen:
+#Problem: Entfernt nur die ältesten Einträge anhand der bundeslandID. Gibt es eine Änderung der Anzahl an einem Tag werden diese Daten gelöscht
+DELETE FROM cases WHERE ID NOT IN (
+ SELECT ID FROM (
+   SELECT ID FROM cases JOIN (
+    SELECT bundeslandID, MAX(date) m FROM cases GROUP BY bundeslandID
+    ) temp ON cases.bundeslandID = temp.bundeslandID  AND cases.date = temp.m
+   ) a
+);
+'''
