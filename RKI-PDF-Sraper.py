@@ -12,29 +12,52 @@ header = {
 }
 
 states = ['Baden-Württemberg', 'Bayern', 'Berlin', 'Brandenburg', 'Bremen', 'Hamburg', 'Hessen', 'Mecklenburg-Vorpommern', 'Niedersachsen', 'Nordrhein-Westfalen', 'Rheinland-Pfalz', 'Saarland', 'Sachsen', 'Sachsen-Anhalt', 'Schleswig-Holstein', 'Thüringen']
-startDate = date(2020, 3, 4)
-endDate = date(2020, 12, 10)
+startDate = date(2020, 3, 10)
+endDate = date(2020, 3, 10)
 days = (endDate - startDate).days+1
-switchDate = date(2020, 9, 1)
+urlSwitchDate = date(2020, 9, 1)
 delta = timedelta(days=1)
 liste = []
-def getTable(pdf):
-    #Funktion um die Seite/den Text aus dem PDF zu extrahieren auf dem der String Tabelle 1 zu finden ist
-    #Hierfür muss jede Seite extrahiert werden und sobald Tabelle 1 gefunden wurde aus der Funktion returnt werden.
+#Funktion um Seite mit der gewünschten Tabelle zu ermitteln (Tabelle 1 kann leider in vielen PDFs nicht gefunden werden)
+def getTable(pdf, states):
     pdfReader = PyPDF2.PdfFileReader(pdf)
-    while counter < Seitengesamtanzahl:
-        pageObj = pdfReader.getPage(counter)
-        if "Tabelle 1" in pdfText:
-            return pageObj.extractText()
-        
+    pageCount = pdfReader.getNumPages()
+    for page in range(0, pageCount):
+        pageObj = pdfReader.getPage(page)
+        pdfText = pageObj.extractText()
+        pdfText = pdfText.replace("\n", "")
+        stateCount = 0
+        #Die Seite auf der mindestens 13 Bundesländer gefunden wurden ist sehr wahrscheinlich die mit der Tabelle
+        for state in states:
+            if state in pdfText:
+                stateCount=stateCount+1
+        if stateCount >= 13:
+            return pdfText
+    return 'keine Tabelle gefunden'
 
-f = open("files/out/log.txt", "a")
+def getCorrectIndex(pdfList, state):
+    #Funktion um die richtige Zelle zu ermitteln
+    #Wenn das Bundesland mehrmals gefunden wurde muss evaluiert werden ob die nächste und vorige Zelle eine Zahl ist. Wenn ja ist es dir richtige Zelle.
+    stateOccurence = pdfList.count(state)
+    if stateOccurence == 1:
+        return pdfList.index(state)
+    elif stateOccurence > 1:
+        indices = [i for i, x in enumerate(pdfList) if x == state]
+        print(indices)
+        for index in indices:
+            print(pdfList[index+1])
+            if pdfList[index+1].isdigit():
+                return index
+    else:
+        return False
+
+f = open("files/out/log.txt", "w+")
 while startDate <= endDate:
     urlID = startDate.strftime("%Y-%m-%d")
     urlPath = startDate.strftime("%b_%Y")
     if "Sep" in urlPath:
         urlPath = urlPath.replace("Sep", "Sept")
-    if  startDate < switchDate:
+    if  startDate < urlSwitchDate:
         #alte URL (Tbl Seite 2) https://www.rki.de/DE/Content/InfAZ/N/Neuartiges_Coronavirus/Situationsberichte/2020-05-22-de.pdf?__blob=publicationFile
         url = 'https://www.rki.de/DE/Content/InfAZ/N/Neuartiges_Coronavirus/Situationsberichte/'+urlID+'-de.pdf?__blob=publicationFile'
         page = 1
@@ -45,36 +68,34 @@ while startDate <= endDate:
         page = 3
         deathsIndex = 6
     response = requests.get(url, headers=header)
-    f.write(url+'\n')
     print(url)
     try:
         with io.BytesIO(response.content) as open_pdf_file:
-            pdfReader = PyPDF2.PdfFileReader(open_pdf_file)
-            pageObj = pdfReader.getPage(page)
-            pdfText = pageObj.extractText()
-            pdfText = pdfText.replace("\n", "")
+            pdfText = getTable(open_pdf_file, states)
             pdfText = pdfText.replace("*", "")
+            pdfText = pdfText.replace(".", "")
+            #Umwandeln des Textes in eine Liste (Leerzeichen sind Trenner)
             wordList = pdfText.split(" ")
+            #Alle '' aus der liste entfernen
+            wordList = list(filter(None, wordList))
+
             for state in states:
-                firstCell = wordList.index("Baden-Württemberg")
-                stateCell = wordList.index(state)
-                liste.append(wordList[stateCell])
-                liste.append(wordList[stateCell+1])
-                #print(wordList[stateCell])
-                #print(wordList[stateCell+1])
-                if wordList[firstCell-1] == "Todesfälle" or wordList[firstCell-1] == "Einw.":
-                    liste.append(wordList[stateCell+deathsIndex])
-                    #print(wordList[stateCell+deathsIndex])
+                stateCell = getCorrectIndex(wordList, state)
+                if stateCell == False:
+                    continue
                 else:
-                    try:
-                        f.write(str(wordList[stateCell])+'\n')
-                        f.write(str(wordList[stateCell-1])+'\n')
-                        f.write(str(wordList[stateCell+1])+'\n')
-                    except:
-                        pass
-                    print('Fehler in', wordList[stateCell])
-                   
+                    liste.append(wordList[stateCell])
+                    liste.append(wordList[stateCell+1])
+                    #Am Anfang wurden noch keine Todesfälle angegeben. Sobald das Wört "Todesfälle" enthalten ist und das führende und folgende Wort keine Zahl ist ist es in der tabelle
+                    if 'Todesfälle' in wordList:
+                        liste.append(wordList[stateCell+deathsIndex])
+                    else:
+                        liste.append(0)
+                    #f.write('Bundesland: ' + wordList[stateCell]+'\n')
+                    #f.write('Anzahl: ' + wordList[stateCell+1]+'\n')
+                    #f.write('Tote: ' + wordList[stateCell+deathsIndex]+'\n')
     except Exception as e:
+        f.write('"'+url+'",\n')
         f.write(str(e)+'\n')
         print(e)
     startDate += delta
@@ -85,3 +106,8 @@ print(days)
 print(len(liste))
 fehler = values-len(liste)
 print('Daten ohne Fehler:', values, 'Fehlende Daten insgesamt:', fehler)
+'''
+response = requests.get(site, headers=header)
+with io.BytesIO(response.content) as open_pdf_file:
+    print(getTable(open_pdf_file))
+'''
