@@ -35,21 +35,26 @@ def getTable(pdf, states):
             return pdfText
     return 'keine Tabelle gefunden'
 
-def getCorrectIndex(pdfList, state):
+def getCorrectIndex(pdfList, word):
     #Funktion um die richtige Zelle zu ermitteln
-    #Wenn das Bundesland mehrmals gefunden wurde muss evaluiert werden ob die nächste und vorige Zelle eine Zahl ist. Wenn ja ist es dir richtige Zelle.
-    stateOccurence = pdfList.count(state)
-    if stateOccurence == 1:
-        return pdfList.index(state)
-    elif stateOccurence > 1:
-        indices = [i for i, x in enumerate(pdfList) if x == state]
+    #Wenn das Wort mehrmals gefunden wurde wird evaluiert, ob die übernächste Zelle eine Zahl ist. Wenn ja ist es dir richtige Zelle.
+    wordOccurence = pdfList.count(word)
+    if wordOccurence == 1:
+        return pdfList.index(word)
+    #Fall um richitge Stelle für Bundesland und Todesfälle zu ermitteln
+    elif wordOccurence > 1:
+        indices = [i for i, x in enumerate(pdfList) if x == word]
         print(indices)
         for index in indices:
-            print(pdfList[index+1])
+            print(pdfList[index+2])
             if pdfList[index+1].isdigit():
                 return index
     else:
         return False
+
+#Funktion um zu ermitteln ob in der Tabelle die Spalte "Todesfälle" enthalten ist
+def deathsInTable(pdfList):
+    stateOccurence = pdfList.count(state)
 
 f = open("files/out/log.txt", "w+")
 while startDate <= endDate:
@@ -87,7 +92,7 @@ while startDate <= endDate:
                     liste.append(wordList[stateCell])
                     liste.append(wordList[stateCell+1])
                     #Am Anfang wurden noch keine Todesfälle angegeben. Sobald das Wört "Todesfälle" enthalten ist und das führende und folgende Wort keine Zahl ist ist es in der tabelle
-                    if 'Todesfälle' in wordList:
+                    if getCorrectIndex(wordList, 'Todesfälle') == True:
                         liste.append(wordList[stateCell+deathsIndex])
                     else:
                         liste.append(0)
