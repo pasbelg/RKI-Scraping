@@ -12,8 +12,9 @@ header = {
 }
 
 states = ['Baden-Württemberg', 'Bayern', 'Berlin', 'Brandenburg', 'Bremen', 'Hamburg', 'Hessen', 'Mecklenburg-Vorpommern', 'Niedersachsen', 'Nordrhein-Westfalen', 'Rheinland-Pfalz', 'Saarland', 'Sachsen', 'Sachsen-Anhalt', 'Schleswig-Holstein', 'Thüringen']
-startDate = date(2020, 3, 10)
-endDate = date(2020, 3, 10)
+startDate = date(2020, 3, 4)
+endDate = date(2020, 12, 20)
+#endDate = date(2020, 12, 20)
 days = (endDate - startDate).days+1
 urlSwitchDate = date(2020, 9, 1)
 delta = timedelta(days=1)
@@ -39,7 +40,8 @@ def getCorrectIndex(pdfList, word):
     #Funktion um die richtige Zelle zu ermitteln
     #Wenn das Wort mehrmals gefunden wurde wird evaluiert, ob die übernächste Zelle eine Zahl ist. Wenn ja ist es dir richtige Zelle.
     wordOccurence = pdfList.count(word)
-    if wordOccurence == 1:
+    #Fall um zu evaluieren ob die übernächste Zelle eine Zahl (also Bestandteil der Tabelle) ist (funktioniert nicht)
+    if wordOccurence == 1 and pdfList[pdfList.index(word)+2].isdigit():
         return pdfList.index(word)
     #Fall um richitge Stelle für Bundesland und Todesfälle zu ermitteln
     elif wordOccurence > 1:
@@ -47,7 +49,7 @@ def getCorrectIndex(pdfList, word):
         print(indices)
         for index in indices:
             print(pdfList[index+2])
-            if pdfList[index+1].isdigit():
+            if pdfList[index+2].isdigit():
                 return index
     else:
         return False
@@ -86,13 +88,13 @@ while startDate <= endDate:
 
             for state in states:
                 stateCell = getCorrectIndex(wordList, state)
-                if stateCell == False:
+                if stateCell is False:
                     continue
                 else:
                     liste.append(wordList[stateCell])
                     liste.append(wordList[stateCell+1])
                     #Am Anfang wurden noch keine Todesfälle angegeben. Sobald das Wört "Todesfälle" enthalten ist und das führende und folgende Wort keine Zahl ist ist es in der tabelle
-                    if getCorrectIndex(wordList, 'Todesfälle') == True:
+                    if getCorrectIndex(wordList, 'Todesfälle') is not False:
                         liste.append(wordList[stateCell+deathsIndex])
                     else:
                         liste.append(0)
