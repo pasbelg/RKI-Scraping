@@ -13,13 +13,13 @@ header = {
 
 states = ['Baden-Württemberg', 'Bayern', 'Berlin', 'Brandenburg', 'Bremen', 'Hamburg', 'Hessen', 'Mecklenburg-Vorpommern', 'Niedersachsen', 'Nordrhein-Westfalen', 'Rheinland-Pfalz', 'Saarland', 'Sachsen', 'Sachsen-Anhalt', 'Schleswig-Holstein', 'Thüringen']
 startDate = date(2020, 3, 4)
-endDate = date(2020, 3, 30)
-#endDate = date(2020, 12, 20)
+endDate = date(2020, 5, 10)
+#endDate = date(2021, 1, 8)
 days = (endDate - startDate).days+1
 urlSwitchDate = date(2020, 9, 1)
 delta = timedelta(days=1)
 liste = []
-#Funktion um Seite mit der gewünschten Tabelle zu ermitteln (Tabelle 1 kann leider in vielen PDFs nicht gefunden werden)
+# Funktion um Seite mit der gewünschten Tabelle zu ermitteln (Tabelle 1 kann leider in vielen PDFs nicht gefunden werden)
 def getTable(pdf, states):
     pdfReader = PyPDF2.PdfFileReader(pdf)
     pageCount = pdfReader.getNumPages()
@@ -36,9 +36,10 @@ def getTable(pdf, states):
             return pdfText
     return 'keine Tabelle gefunden'   
 
+# Funktion um die richtige Zelle zu ermitteln
+# Wenn das Wort mehrmals gefunden wurde wird evaluiert, ob die übernächste Zelle eine Zahl ist. Wenn ja ist es dir richtige Zelle.
 def getCorrectIndex(pdfList, word):
-    #Funktion um die richtige Zelle zu ermitteln
-    #Wenn das Wort mehrmals gefunden wurde wird evaluiert, ob die übernächste Zelle eine Zahl ist. Wenn ja ist es dir richtige Zelle.
+
     wordOccurence = pdfList.count(word)
     if wordOccurence == 1:
         return pdfList.index(word)
@@ -52,6 +53,47 @@ def getCorrectIndex(pdfList, word):
                 return index
     else:
         return False
+
+# Funktion um die Integrität der Daten zu überprüfen.
+# Es werden die erhobenen Daten aus den letzten zwei Tagen verglichen.
+# Fallunterscheidung:
+#   Fälle und Todesfälle sind gleichgroß/höher. Aus den Daten wird ein String gebildet und zu valid hinzugefügt. 
+#   Fälle und Todesfälle sind nicht gleichgroß/höher oder kein Vergleich möglich (z.B. Fehler in den Vergangenen Daten). Aus den Daten wird ein String gebildet und zu unknown hinzugefügt. 
+#   Das Bundesland ist nicht vorhanden. Aus dem Bundesland wird eine Fehlermeldung gebildet und als errors.
+def checkIntegrity(states, pastData, presentData):
+    valid = []
+    unknown = []
+    errors = []
+    dataString = ''
+    extractedData = ['Fälle', 'Todesfälle']
+    for state in states:
+        integrity = True
+        if state in presentData:
+            dateValue = presentData[presentData.index(state)+3]
+            dataString = '(' + str(state) + ','
+            if state in pastData:
+                for instance in extractedData:
+                    pastValue = presentData[pastData.index(state)+extractedData.index(instance)+1]
+                    presentValue = presentData[presentData.index(state)+extractedData.index(instance)+1]
+                    if presentValue >= pastValue:
+                        dataString = dataString + str(presentValue) + ','
+                    else:
+                        integrity = False
+                        dataString = dataString + str(presentValue) + ','
+                        #errors.append('Falsche Daten in: ' + data + state)
+            else:
+                integrity = False
+                dataString = dataString + str(presentValue) + ','
+                #errors.append(state + ' kein Vergleich möglich')
+            dataString = dataString + dateValue + ')'  
+        else:
+            errors.append(state + ' nicht Vorhanden')
+        if integrity == True:
+            valid.append(dataString)
+        else:
+            unknown.append(dataString)
+    integrityIndex = {'validData':valid, 'unknownData':unknown, 'errors':errors}
+    return integrityIndex
 
 f = open("files/out/log.txt", "w+")
 while startDate <= endDate:
@@ -84,7 +126,7 @@ while startDate <= endDate:
             wordList = pdfText.split(" ")
             #Alle '' aus der liste entfernen
             wordList = list(filter(None, wordList))
-
+            dataCount = 0
             for state in states:
                 stateCell = getCorrectIndex(wordList, state)
                 if stateCell == False:
@@ -92,22 +134,36 @@ while startDate <= endDate:
                     f.write('error at '+ state + '\n')
                     continue
                 else:
-                    liste.append(wordList[stateCell])
-                    liste.append(wordList[stateCell+1])
+                    liste.append(wordList[stateCell]); dataCount = dataCount + 1
+                    liste.append(int(wordList[stateCell+1])); dataCount = dataCount + 1
                     #f.write('success at '+ state + '\n')
                     #f.write('Bundesland: ' + wordList[stateCell]+'\n')
                     #f.write('Anzahl: ' + wordList[stateCell+1]+'\n')
                     #Am Anfang wurden noch keine Todesfälle angegeben. Erst ab 17.03.2020 sind Todesfälle enthalten
                     if curDate < date(2020, 3, 17):
-                        liste.append(0)
+                        liste.append(0); dataCount = dataCount + 1
                     else:
-                        liste.append(wordList[stateCell+deathsIndex])
+                        liste.append(int(wordList[stateCell+deathsIndex])); dataCount = dataCount + 1
                         #f.write('Tote: ' + wordList[stateCell+deathsIndex]+'\n')
-                    liste.append(urlID)
+                    liste.append(urlID); dataCount = dataCount + 1
     except Exception as e:
         f.write('"'+url+'",\n')
         f.write(str(e)+'\n')
         print(e)
+  
+    presentData = liste[len(liste)-dataCount:len(liste)]
+    try: 
+        integrityIndex = checkIntegrity(states, pastData, presentData)
+        if len(integrityIndex['errors']) != 0:
+            f.write('"'+url+'",\n')
+            for error in integrityIndex['errors']:
+                f.write('"'+error+'",\n')
+    except Exception as e:
+        f.write('"'+url+'",\n')
+        f.write(str(e)+'\n')
+        print(e)
+    pastData = liste[len(liste)-dataCount:len(liste)]
+
     startDate += delta
 
 print(liste)
@@ -116,7 +172,7 @@ print(days)
 print(len(liste))
 fehler = values-len(liste)
 print('Daten ohne Fehler:', len(liste), 'Erwartete Einträge:', values, 'Fehlende Daten insgesamt:', fehler)
-f.write('Extrahierte Daten: '+ str(len(liste)) + 'Erwartete Einträge: ' + str(values) + 'Fehlende Daten insgesamt: '+ str(fehler))
+f.write('Extrahierte Daten: '+ str(len(liste)) + ' Erwartete Einträge: ' + str(values) + ' Fehlende Daten insgesamt: '+ str(fehler))
 f.close()
 '''
 response = requests.get(site, headers=header)
