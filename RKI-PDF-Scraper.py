@@ -18,7 +18,6 @@ endDate = date(2021, 1, 8)
 days = (endDate - startDate).days+1
 urlSwitchDate = date(2020, 9, 1)
 delta = timedelta(days=1)
-result = []
 runtimeErrors = []
 presentData = []
 pastData = []
@@ -102,6 +101,7 @@ errorFile = open("files/out/scrapingErrors.txt", "w+")
 uncertainDataFile = open("files/out/manualValidation.txt", "w+")
 validDataFile = open("files/out/importableData.txt", "w+")
 while startDate <= endDate:
+    result = []
     curDate = startDate
     urlID = curDate.strftime("%Y-%m-%d")
     urlPath = curDate.strftime("%b_%Y")
@@ -148,8 +148,10 @@ while startDate <= endDate:
         runtimeErrors.append(url)
         errorFile.write(url+'\n')
         errorFile.write(str(e)+'\n')
-  
-    presentData = result[len(result)-dataCount:len(result)] 
+        f.write('Fehler beim Scraping\n')
+        pass
+
+    presentData = result[len(result)-dataCount:len(result)]
     try:
         integrityIndex = checkIntegrity(states, pastData, presentData)
         if len(integrityIndex['errors']) != 0:
@@ -158,14 +160,29 @@ while startDate <= endDate:
                 for error in integrityIndex['errors']:
                     errorFile.write(error+'\n')
         for data in integrityIndex['validData']:
-            validDataFile.write(data+'\n')
+            #Weil Check integrity eine leere Liste mit einer Leeren Liste vergelicht
+            if len(integrityIndex['validData']) != 0:
+                validDataFile.write(data+'\n')
+            else:
+                runtimeErrors.append(url)
+                errorFile.write(url+'\n')
+                errorFile.write('Fehler beim Scraping\n')
         for data in integrityIndex['uncertainData']:
             uncertainDataFile.write(data+'\n')
     except Exception as e:
         runtimeErrors.append(url)
         errorFile.write(url+'\n')
         errorFile.write(str(e)+'\n')
+        pass
     pastData = result[len(result)-dataCount:len(result)]
-    
+    '''
+    try:
+        pastData = result[len(result)-dataCount:len(result)]
+    except Exception as e:
+        f.write('---PAST---'+'\n')
+        f.write(url+'\n')
+        f.write(result)
+        f.write(str(e))
+    '''
     startDate += delta
 f.close()
