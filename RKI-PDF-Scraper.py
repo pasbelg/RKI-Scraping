@@ -13,12 +13,15 @@ header = {
 
 states = ['Baden-Württemberg', 'Bayern', 'Berlin', 'Brandenburg', 'Bremen', 'Hamburg', 'Hessen', 'Mecklenburg-Vorpommern', 'Niedersachsen', 'Nordrhein-Westfalen', 'Rheinland-Pfalz', 'Saarland', 'Sachsen', 'Sachsen-Anhalt', 'Schleswig-Holstein', 'Thüringen']
 startDate = date(2020, 3, 4)
-endDate = date(2020, 5, 10)
-#endDate = date(2021, 1, 8)
+#endDate = date(2020, 3, 10)
+endDate = date(2021, 1, 8)
 days = (endDate - startDate).days+1
 urlSwitchDate = date(2020, 9, 1)
 delta = timedelta(days=1)
-liste = []
+result = []
+runtimeErrors = []
+presentData = []
+pastData = []
 # Funktion um Seite mit der gewünschten Tabelle zu ermitteln (Tabelle 1 kann leider in vielen PDFs nicht gefunden werden)
 def getTable(pdf, states):
     pdfReader = PyPDF2.PdfFileReader(pdf)
@@ -58,11 +61,11 @@ def getCorrectIndex(pdfList, word):
 # Es werden die erhobenen Daten aus den letzten zwei Tagen verglichen.
 # Fallunterscheidung:
 #   Fälle und Todesfälle sind gleichgroß/höher. Aus den Daten wird ein String gebildet und zu valid hinzugefügt. 
-#   Fälle und Todesfälle sind nicht gleichgroß/höher oder kein Vergleich möglich (z.B. Fehler in den Vergangenen Daten). Aus den Daten wird ein String gebildet und zu unknown hinzugefügt. 
+#   Fälle und Todesfälle sind nicht gleichgroß/höher oder kein Vergleich möglich (z.B. Fehler in den Vergangenen Daten). Aus den Daten wird ein String gebildet und zu uncertain hinzugefügt. 
 #   Das Bundesland ist nicht vorhanden. Aus dem Bundesland wird eine Fehlermeldung gebildet und als errors.
 def checkIntegrity(states, pastData, presentData):
     valid = []
-    unknown = []
+    uncertain = []
     errors = []
     dataString = ''
     extractedData = ['Fälle', 'Todesfälle']
@@ -80,22 +83,24 @@ def checkIntegrity(states, pastData, presentData):
                     else:
                         integrity = False
                         dataString = dataString + str(presentValue) + ','
-                        #errors.append('Falsche Daten in: ' + data + state)
+                        integrityProblem = state + ' am ' + dateValue + ': ' + instance + ' sind niedriger als am Vortag'
             else:
                 integrity = False
                 dataString = dataString + str(presentValue) + ','
-                #errors.append(state + ' kein Vergleich möglich')
+                integrityProblem = state + ' am ' + dateValue + ': Kein Vergleich mit Vortag möglich'
             dataString = dataString + dateValue + ')'  
         else:
             errors.append(state + ' nicht Vorhanden')
         if integrity == True:
             valid.append(dataString)
         else:
-            unknown.append(dataString)
-    integrityIndex = {'validData':valid, 'unknownData':unknown, 'errors':errors}
+            uncertain.append(dataString + ' ' + integrityProblem)
+    integrityIndex = {'validData':valid, 'uncertainData':uncertain, 'errors':errors}
     return integrityIndex
-
 f = open("files/out/log.txt", "w+")
+errorFile = open("files/out/scrapingErrors.txt", "w+")
+uncertainDataFile = open("files/out/manualValidation.txt", "w+")
+validDataFile = open("files/out/importableData.txt", "w+")
 while startDate <= endDate:
     curDate = startDate
     urlID = curDate.strftime("%Y-%m-%d")
@@ -114,7 +119,6 @@ while startDate <= endDate:
         deathsIndex = 6
     response = requests.get(url, headers=header)
     print(url)
-    #f.write(url+'\n')
     try:
         with io.BytesIO(response.content) as open_pdf_file:
             pdfText = getTable(open_pdf_file, states)
@@ -130,52 +134,38 @@ while startDate <= endDate:
             for state in states:
                 stateCell = getCorrectIndex(wordList, state)
                 if stateCell == False:
-                    f.write(url+'\n')
-                    f.write('error at '+ state + '\n')
                     continue
                 else:
-                    liste.append(wordList[stateCell]); dataCount = dataCount + 1
-                    liste.append(int(wordList[stateCell+1])); dataCount = dataCount + 1
-                    #f.write('success at '+ state + '\n')
-                    #f.write('Bundesland: ' + wordList[stateCell]+'\n')
-                    #f.write('Anzahl: ' + wordList[stateCell+1]+'\n')
+                    result.append(wordList[stateCell]); dataCount = dataCount + 1
+                    result.append(int(wordList[stateCell+1])); dataCount = dataCount + 1
                     #Am Anfang wurden noch keine Todesfälle angegeben. Erst ab 17.03.2020 sind Todesfälle enthalten
                     if curDate < date(2020, 3, 17):
-                        liste.append(0); dataCount = dataCount + 1
+                        result.append(0); dataCount = dataCount + 1
                     else:
-                        liste.append(int(wordList[stateCell+deathsIndex])); dataCount = dataCount + 1
-                        #f.write('Tote: ' + wordList[stateCell+deathsIndex]+'\n')
-                    liste.append(urlID); dataCount = dataCount + 1
+                        result.append(int(wordList[stateCell+deathsIndex])); dataCount = dataCount + 1
+                    result.append(urlID); dataCount = dataCount + 1
     except Exception as e:
-        f.write('"'+url+'",\n')
-        f.write(str(e)+'\n')
-        print(e)
+        runtimeErrors.append(url)
+        errorFile.write(url+'\n')
+        errorFile.write(str(e)+'\n')
   
-    presentData = liste[len(liste)-dataCount:len(liste)]
-    try: 
+    presentData = result[len(result)-dataCount:len(result)] 
+    try:
         integrityIndex = checkIntegrity(states, pastData, presentData)
         if len(integrityIndex['errors']) != 0:
-            f.write('"'+url+'",\n')
-            for error in integrityIndex['errors']:
-                f.write('"'+error+'",\n')
+            if url in runtimeErrors:
+                errorFile.write('"'+url+'",\n')
+                for error in integrityIndex['errors']:
+                    errorFile.write(error+'\n')
+        for data in integrityIndex['validData']:
+            validDataFile.write(data+'\n')
+        for data in integrityIndex['uncertainData']:
+            uncertainDataFile.write(data+'\n')
     except Exception as e:
-        f.write('"'+url+'",\n')
-        f.write(str(e)+'\n')
-        print(e)
-    pastData = liste[len(liste)-dataCount:len(liste)]
-
+        runtimeErrors.append(url)
+        errorFile.write(url+'\n')
+        errorFile.write(str(e)+'\n')
+    pastData = result[len(result)-dataCount:len(result)]
+    
     startDate += delta
-
-print(liste)
-values = 4*16*days - 9*4
-print(days)
-print(len(liste))
-fehler = values-len(liste)
-print('Daten ohne Fehler:', len(liste), 'Erwartete Einträge:', values, 'Fehlende Daten insgesamt:', fehler)
-f.write('Extrahierte Daten: '+ str(len(liste)) + ' Erwartete Einträge: ' + str(values) + ' Fehlende Daten insgesamt: '+ str(fehler))
 f.close()
-'''
-response = requests.get(site, headers=header)
-with io.BytesIO(response.content) as open_pdf_file:
-    print(getTable(open_pdf_file))
-'''
