@@ -11,16 +11,20 @@ header = {
   "X-Requested-With": "XMLHttpRequest"
 }
 
-states = ['Baden-Württemberg', 'Bayern', 'Berlin', 'Brandenburg', 'Bremen', 'Hamburg', 'Hessen', 'Mecklenburg-Vorpommern', 'Niedersachsen', 'Nordrhein-Westfalen', 'Rheinland-Pfalz', 'Saarland', 'Sachsen', 'Sachsen-Anhalt', 'Schleswig-Holstein', 'Thüringen']
-startDate = date(2020, 3, 4)
+states = [u'Baden-Württemberg', 'Bayern', 'Berlin', 'Brandenburg', 'Bremen', 'Hamburg', 'Hessen', 'Mecklenburg-Vorpommern', 'Niedersachsen', 'Nordrhein-Westfalen', 'Rheinland-Pfalz', 'Saarland', 'Sachsen', 'Sachsen-Anhalt', 'Schleswig-Holstein', 'Thüringen']
+#startDate = date(2020, 3, 4)
+startDate = date(2020, 8, 1)
 #endDate = date(2020, 3, 10)
-endDate = date(2021, 1, 8)
+endDate = date(2020, 8, 11)
 days = (endDate - startDate).days+1
 urlSwitchDate = date(2020, 9, 1)
 delta = timedelta(days=1)
 runtimeErrors = []
 presentData = []
 pastData = []
+errorFile = open("files/out/scrapingErrors.txt", "w+", encoding="UTF8")
+uncertainDataFile = open("files/out/manualValidation.txt", "w+", encoding="UTF8")
+validDataFile = open("files/out/importableData.txt", "w+", encoding="UTF8")
 # Funktion um Seite mit der gewünschten Tabelle zu ermitteln (Tabelle 1 kann leider in vielen PDFs nicht gefunden werden)
 def getTable(pdf, states):
     pdfReader = PyPDF2.PdfFileReader(pdf)
@@ -67,39 +71,39 @@ def checkIntegrity(states, pastData, presentData):
     uncertain = []
     errors = []
     dataString = ''
+    presentValue = ''
     extractedData = ['Fälle', 'Todesfälle']
     for state in states:
         integrity = True
         if state in presentData:
             dateValue = presentData[presentData.index(state)+3]
             dataString = '(' + str(state) + ','
-            if state in pastData:
-                for instance in extractedData:
-                    pastValue = presentData[pastData.index(state)+extractedData.index(instance)+1]
-                    presentValue = presentData[presentData.index(state)+extractedData.index(instance)+1]
-                    if presentValue >= pastValue:
-                        dataString = dataString + str(presentValue) + ','
-                    else:
-                        integrity = False
-                        dataString = dataString + str(presentValue) + ','
-                        integrityProblem = state + ' am ' + dateValue + ': ' + instance + ' sind niedriger als am Vortag'
-            else:
-                integrity = False
-                dataString = dataString + str(presentValue) + ','
-                integrityProblem = state + ' am ' + dateValue + ': Kein Vergleich mit Vortag möglich'
+            for instance in extractedData:
+                presentValue = presentData[presentData.index(state)+extractedData.index(instance)+1]
+                if state in pastData:
+                        pastValue = presentData[pastData.index(state)+extractedData.index(instance)+1]
+                        if type(presentValue) == int and presentValue >= pastValue:
+                            dataString = dataString + str(presentValue) + ','
+                        else:
+                            integrity = False
+                            dataString = dataString + str(presentValue) + ','
+                            integrityProblem = state + ' am ' + dateValue + ': ' + instance + ' sind niedriger als am Vortag'
+                else:
+                    integrity = False
+                    dataString = dataString + str(presentValue) + ','
+                    integrityProblem = state + ' am ' + dateValue + ': Kein Vergleich mit Vortag möglich'
             dataString = dataString + dateValue + ')'  
         else:
-            errors.append(state + ' nicht Vorhanden')
+            errors.append(state + ' nicht gefunden')
+            continue
         if integrity == True:
             valid.append(dataString)
         else:
-            uncertain.append(dataString + ' ' + integrityProblem)
+            uncertain.append(dataString + ' ----- ' + integrityProblem)
     integrityIndex = {'validData':valid, 'uncertainData':uncertain, 'errors':errors}
     return integrityIndex
-f = open("files/out/log.txt", "w+")
-errorFile = open("files/out/scrapingErrors.txt", "w+")
-uncertainDataFile = open("files/out/manualValidation.txt", "w+")
-validDataFile = open("files/out/importableData.txt", "w+")
+
+
 while startDate <= endDate:
     result = []
     curDate = startDate
@@ -148,14 +152,13 @@ while startDate <= endDate:
         runtimeErrors.append(url)
         errorFile.write(url+'\n')
         errorFile.write(str(e)+'\n')
-        f.write('Fehler beim Scraping\n')
         pass
-
     presentData = result[len(result)-dataCount:len(result)]
+
     try:
         integrityIndex = checkIntegrity(states, pastData, presentData)
         if len(integrityIndex['errors']) != 0:
-            if url in runtimeErrors:
+            if url not in runtimeErrors:
                 errorFile.write('"'+url+'",\n')
                 for error in integrityIndex['errors']:
                     errorFile.write(error+'\n')
@@ -175,14 +178,8 @@ while startDate <= endDate:
         errorFile.write(str(e)+'\n')
         pass
     pastData = result[len(result)-dataCount:len(result)]
-    '''
-    try:
-        pastData = result[len(result)-dataCount:len(result)]
-    except Exception as e:
-        f.write('---PAST---'+'\n')
-        f.write(url+'\n')
-        f.write(result)
-        f.write(str(e))
-    '''
+
     startDate += delta
-f.close()
+errorFile.close()
+uncertainDataFile.close()
+validDataFile.close()
