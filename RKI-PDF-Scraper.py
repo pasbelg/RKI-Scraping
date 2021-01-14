@@ -12,10 +12,10 @@ header = {
 }
 
 states = [u'Baden-Württemberg', 'Bayern', 'Berlin', 'Brandenburg', 'Bremen', 'Hamburg', 'Hessen', 'Mecklenburg-Vorpommern', 'Niedersachsen', 'Nordrhein-Westfalen', 'Rheinland-Pfalz', 'Saarland', 'Sachsen', 'Sachsen-Anhalt', 'Schleswig-Holstein', 'Thüringen']
-#startDate = date(2020, 3, 4)
-startDate = date(2020, 8, 1)
-#endDate = date(2020, 3, 10)
-endDate = date(2020, 8, 11)
+startDate = date(2020, 3, 4)
+#startDate = date(2020, 8, 1)
+endDate = date(2020, 12, 20)
+#endDate = date(2020, 8, 11)
 days = (endDate - startDate).days+1
 urlSwitchDate = date(2020, 9, 1)
 delta = timedelta(days=1)
@@ -163,15 +163,11 @@ while startDate <= endDate:
                 for error in integrityIndex['errors']:
                     errorFile.write(error+'\n')
         for data in integrityIndex['validData']:
-            #Weil Check integrity eine leere Liste mit einer Leeren Liste vergelicht
-            if len(integrityIndex['validData']) != 0:
-                validDataFile.write(data+'\n')
-            else:
-                runtimeErrors.append(url)
-                errorFile.write(url+'\n')
-                errorFile.write('Fehler beim Scraping\n')
-        for data in integrityIndex['uncertainData']:
-            uncertainDataFile.write(data+'\n')
+            validDataFile.write(data+'\n')
+        if len(integrityIndex['uncertainData']) != 0:
+            errorFile.write('"'+url+'",\n')
+            for data in integrityIndex['uncertainData']:
+                uncertainDataFile.write(data+'\n')
     except Exception as e:
         runtimeErrors.append(url)
         errorFile.write(url+'\n')
