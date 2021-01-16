@@ -103,37 +103,72 @@ def checkIntegrity(states, pastData, presentData):
     integrityIndex = {'validData':valid, 'uncertainData':uncertain, 'errors':errors}
     return integrityIndex
 
+# Funktion die anhand des Datums den Link zum RKI und Rahmendaten wie die Position der Totesfälle in der Tabelle ermittelt und zurück gibt
+def genSiteInfo(date):
+    result = {'url':'', 'deathsColumn':''}
+    urlID = date.strftime("%Y-%m-%d")
+    urlPath = date.strftime("%b_%Y")
+    if "Sep" in urlPath:
+        urlPath = urlPath.replace("Sep", "Sept")
+    if  date < urlSwitchDate:
+        #alte URL (Tbl Seite 2) https://www.rki.de/DE/Content/InfAZ/N/Neuartiges_Coronavirus/Situationsberichte/2020-05-22-de.pdf?__blob=publicationFile
+        result['url'] = 'https://www.rki.de/DE/Content/InfAZ/N/Neuartiges_Coronavirus/Situationsberichte/'+urlID+'-de.pdf?__blob=publicationFile'
+        page = 1
+        result['deathsColumn'] = 4
+        deathsIndex = 4
+    else:
+        #Neue URL & anderes PDf Format (Tbl Seite 4) https://www.rki.de/DE/Content/InfAZ/N/Neuartiges_Coronavirus/Situationsberichte/Dez_2020/2020-12-08-de.pdf?__blob=publicationFile
+        result['url'] = 'https://www.rki.de/DE/Content/InfAZ/N/Neuartiges_Coronavirus/Situationsberichte/'+urlPath+'/'+urlID+'-de.pdf?__blob=publicationFile'
+        page = 3
+        result['deathsColumn'] = 6
+        #deathsIndex = 6
+    return result
+
+# Funktion die fest definierte Zeichen aus einem Text entfernt und eine gesäuberte (leere String entfernt) Liste aller Wörter (ahnhand der Leerzeichen getrennt) zurück gibt.
+def cleanText(text):
+    charsToRemove = ['*', '.', '+', ' - ']
+    for char in charsToRemove:
+        text = text.replace(char, '')
+    #Umwandeln des Textes in eine Liste (Leerzeichen sind Trenner)
+    wordList = text.split(" ")
+    #Alle '' aus der liste entfernen
+    wordList = list(filter(None, wordList))
+    return wordList
+
+# Funktion um die gescrapten Daten nach der Überprüfung und Einordnung in die jeweilige Datei zu schreiben.
+# Wird nur ein einzelner Wert übergeben, wird die URL zu den Laufzeitfehlern hinzugefügt und in die Fehler Datei geschrieben. 
+def fileHandler(writeData, url, runtimeErrors):
+    if isinstance(writeData, dict):
+        if len(writeData['errors']) != 0:
+            if url not in runtimeErrors:
+                errorFile.write('"'+url+'",\n')
+                for error in writeData['errors']:
+                    errorFile.write(error+'\n')
+        for data in writeData['validData']:
+            validDataFile.write(data+'\n')
+        if len(writeData['uncertainData']) != 0:
+            errorFile.write('"'+url+'",\n')
+            for data in writeData['uncertainData']:
+                uncertainDataFile.write(data+'\n')
+    else:
+        if url not in runtimeErrors:
+            runtimeErrors.append(url)
+            errorFile.write(url+'\n')
+            errorFile.write(str(writeData)+'\n')
+    return runtimeErrors
 
 while startDate <= endDate:
     result = []
     curDate = startDate
-    urlID = curDate.strftime("%Y-%m-%d")
-    urlPath = curDate.strftime("%b_%Y")
-    if "Sep" in urlPath:
-        urlPath = urlPath.replace("Sep", "Sept")
-    if  curDate < urlSwitchDate:
-        #alte URL (Tbl Seite 2) https://www.rki.de/DE/Content/InfAZ/N/Neuartiges_Coronavirus/Situationsberichte/2020-05-22-de.pdf?__blob=publicationFile
-        url = 'https://www.rki.de/DE/Content/InfAZ/N/Neuartiges_Coronavirus/Situationsberichte/'+urlID+'-de.pdf?__blob=publicationFile'
-        page = 1
-        deathsIndex = 4
-    else:
-        #Neue URL & anderes PDf Format (Tbl Seite 4) https://www.rki.de/DE/Content/InfAZ/N/Neuartiges_Coronavirus/Situationsberichte/Dez_2020/2020-12-08-de.pdf?__blob=publicationFile
-        url = 'https://www.rki.de/DE/Content/InfAZ/N/Neuartiges_Coronavirus/Situationsberichte/'+urlPath+'/'+urlID+'-de.pdf?__blob=publicationFile'
-        page = 3
-        deathsIndex = 6
+    siteData = genSiteInfo(curDate)
+    url = siteData['url']
+    deathsIndex = siteData['deathsColumn']
     response = requests.get(url, headers=header)
     print(url)
     try:
         with io.BytesIO(response.content) as open_pdf_file:
             pdfText = getTable(open_pdf_file, states)
-            pdfText = pdfText.replace("*", "")
-            pdfText = pdfText.replace(".", "")
-            pdfText = pdfText.replace("+", "")
-            pdfText = pdfText.replace(" - ", "")
-            #Umwandeln des Textes in eine Liste (Leerzeichen sind Trenner)
-            wordList = pdfText.split(" ")
-            #Alle '' aus der liste entfernen
-            wordList = list(filter(None, wordList))
+            wordList = cleanText(pdfText)
             dataCount = 0
             for state in states:
                 stateCell = getCorrectIndex(wordList, state)
@@ -147,16 +182,21 @@ while startDate <= endDate:
                         result.append(0); dataCount = dataCount + 1
                     else:
                         result.append(int(wordList[stateCell+deathsIndex])); dataCount = dataCount + 1
-                    result.append(urlID); dataCount = dataCount + 1
+                    result.append(curDate.strftime("%Y-%m-%d")); dataCount = dataCount + 1
     except Exception as e:
-        runtimeErrors.append(url)
-        errorFile.write(url+'\n')
-        errorFile.write(str(e)+'\n')
+        #runtimeErrors.append(url)
+        #errorFile.write(url+'\n')
+        #errorFile.write(str(e)+'\n')
+        error = 'Fehler beim Scraping: ' + str(e)
+        runtimeErrors = fileHandler(error, url, runtimeErrors)
         pass
-    presentData = result[len(result)-dataCount:len(result)]
-
+    
     try:
+        presentData = result[len(result)-dataCount:len(result)]
         integrityIndex = checkIntegrity(states, pastData, presentData)
+        fileHandler(integrityIndex, url, runtimeErrors)
+        pastData = result[len(result)-dataCount:len(result)]
+        '''
         if len(integrityIndex['errors']) != 0:
             if url not in runtimeErrors:
                 errorFile.write('"'+url+'",\n')
@@ -168,12 +208,15 @@ while startDate <= endDate:
             errorFile.write('"'+url+'",\n')
             for data in integrityIndex['uncertainData']:
                 uncertainDataFile.write(data+'\n')
+        '''
     except Exception as e:
-        runtimeErrors.append(url)
-        errorFile.write(url+'\n')
-        errorFile.write(str(e)+'\n')
+        #runtimeErrors.append(url)
+        #errorFile.write(url+'\n')
+        #errorFile.write(str(e)+'\n')
+        error = 'Fehler beim schreiben der Daten: ' + str(e)
+        runtimeErrors = fileHandler(error, url, runtimeErrors)
         pass
-    pastData = result[len(result)-dataCount:len(result)]
+    
 
     startDate += delta
 errorFile.close()
