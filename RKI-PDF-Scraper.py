@@ -19,7 +19,7 @@ endDate = date(2020, 12, 20)
 days = (endDate - startDate).days+1
 urlSwitchDate = date(2020, 9, 1)
 delta = timedelta(days=1)
-runtimeErrors = []
+runtimeExceptions = []
 presentData = []
 pastData = []
 errorFile = open("files/out/scrapingErrors.txt", "w+", encoding="UTF8")
@@ -45,7 +45,6 @@ def getTable(pdf, states):
 # Funktion um die richtige Zelle zu ermitteln
 # Wenn das Wort mehrmals gefunden wurde wird evaluiert, ob die übernächste Zelle eine Zahl ist. Wenn ja ist es dir richtige Zelle.
 def getCorrectIndex(pdfList, word):
-
     wordOccurence = pdfList.count(word)
     if wordOccurence == 1:
         return pdfList.index(word)
@@ -104,24 +103,24 @@ def checkIntegrity(states, pastData, presentData):
     return integrityIndex
 
 # Funktion die anhand des Datums den Link zum RKI und Rahmendaten wie die Position der Totesfälle in der Tabelle ermittelt und zurück gibt
-def genSiteInfo(date):
+def genSiteInfo(day):
     result = {'url':'', 'deathsColumn':''}
-    urlID = date.strftime("%Y-%m-%d")
-    urlPath = date.strftime("%b_%Y")
+    urlID = day.strftime("%Y-%m-%d")
+    urlPath = day.strftime("%b_%Y")
     if "Sep" in urlPath:
         urlPath = urlPath.replace("Sep", "Sept")
-    if  date < urlSwitchDate:
+    if  day < urlSwitchDate:
         #alte URL (Tbl Seite 2) https://www.rki.de/DE/Content/InfAZ/N/Neuartiges_Coronavirus/Situationsberichte/2020-05-22-de.pdf?__blob=publicationFile
         result['url'] = 'https://www.rki.de/DE/Content/InfAZ/N/Neuartiges_Coronavirus/Situationsberichte/'+urlID+'-de.pdf?__blob=publicationFile'
         page = 1
         result['deathsColumn'] = 4
-        deathsIndex = 4
+        indexDeaths = 4
     else:
         #Neue URL & anderes PDf Format (Tbl Seite 4) https://www.rki.de/DE/Content/InfAZ/N/Neuartiges_Coronavirus/Situationsberichte/Dez_2020/2020-12-08-de.pdf?__blob=publicationFile
         result['url'] = 'https://www.rki.de/DE/Content/InfAZ/N/Neuartiges_Coronavirus/Situationsberichte/'+urlPath+'/'+urlID+'-de.pdf?__blob=publicationFile'
         page = 3
         result['deathsColumn'] = 6
-        #deathsIndex = 6
+        #indexDeaths = 6
     return result
 
 # Funktion die fest definierte Zeichen aus einem Text entfernt und eine gesäuberte (leere String entfernt) Liste aller Wörter (ahnhand der Leerzeichen getrennt) zurück gibt.
@@ -137,10 +136,10 @@ def cleanText(text):
 
 # Funktion um die gescrapten Daten nach der Überprüfung und Einordnung in die jeweilige Datei zu schreiben.
 # Wird nur ein einzelner Wert übergeben, wird die URL zu den Laufzeitfehlern hinzugefügt und in die Fehler Datei geschrieben. 
-def fileHandler(writeData, url, runtimeErrors):
+def fileHandler(writeData, url, runtimeExceptions):
     if isinstance(writeData, dict):
         if len(writeData['errors']) != 0:
-            if url not in runtimeErrors:
+            if url not in runtimeExceptions:
                 errorFile.write('"'+url+'",\n')
                 for error in writeData['errors']:
                     errorFile.write(error+'\n')
@@ -151,18 +150,33 @@ def fileHandler(writeData, url, runtimeErrors):
             for data in writeData['uncertainData']:
                 uncertainDataFile.write(data+'\n')
     else:
-        if url not in runtimeErrors:
-            runtimeErrors.append(url)
+        if url not in runtimeExceptions:
+            runtimeExceptions.append(url)
             errorFile.write(url+'\n')
             errorFile.write(str(writeData)+'\n')
-    return runtimeErrors
+    return runtimeExceptions
+
+# Funktion um die benötigten Daten aus der Liste der gesprapten Wörtern des PDFs zu ziehen und in einer Liste zu speichern.
+def getRelvantData(wordList, day, indexCases, indexDeaths):
+    #Hinzufügen des Bundeslands
+    result.append(wordList[stateCell])
+    #Hinzufügen der Corona Fälle (die Fälle sind immer der erste Wert nach dem Bundesland)
+    result.append(int(wordList[stateCell+indexCases]))
+    #Am Anfang wurden noch keine Todesfälle angegeben. Erst ab 17.03.2020 sind Todesfälle enthalten
+    if day < date(2020, 3, 17):
+        #Hinzufügen der Corona Todesfälle als 0 weil sie noch nicht in den Daten vorhanden sind
+        result.append(0)
+    else:
+        #Hinzufügen der Corona Todesfälle (die Position der Todesfälle wurde in genSiteInfo anhand des Datums ermittelt)
+        result.append(int(wordList[stateCell+indexDeaths]))
+    #Hinzufügen des Datums
+    result.append(day.strftime("%Y-%m-%d"))
 
 while startDate <= endDate:
     result = []
     curDate = startDate
     siteData = genSiteInfo(curDate)
     url = siteData['url']
-    deathsIndex = siteData['deathsColumn']
     response = requests.get(url, headers=header)
     print(url)
     try:
@@ -173,48 +187,41 @@ while startDate <= endDate:
             for state in states:
                 stateCell = getCorrectIndex(wordList, state)
                 if stateCell == False:
+                    runtimeExceptions = fileHandler('Es konnte keine passende Seite im PDF gefunden werden', url, runtimeExceptions)
                     continue
                 else:
+                    getRelvantData(wordList, curDate, 1, siteData['deathsColumn'])
+                    #Es werden immer 4 Einzeldaten hinzugefügt.Deswegen wir der Zähler für die spätere Validierung um 4 erhöht. Bei Fehlenden Daten greift die Exeption also auch kein Zähler.
+                    dataCount = dataCount + 4
+                    print(dataCount)
+                    '''
+                    #Hinzufügen des Bundeslands
                     result.append(wordList[stateCell]); dataCount = dataCount + 1
+                    #Hinzufügen der Corona Fälle
                     result.append(int(wordList[stateCell+1])); dataCount = dataCount + 1
                     #Am Anfang wurden noch keine Todesfälle angegeben. Erst ab 17.03.2020 sind Todesfälle enthalten
                     if curDate < date(2020, 3, 17):
+                        #Hinzufügen der Corona Todesfälle als 0 weil sie noch nicht in den Daten vorhanden sind
                         result.append(0); dataCount = dataCount + 1
                     else:
-                        result.append(int(wordList[stateCell+deathsIndex])); dataCount = dataCount + 1
+                        #Hinzufügen der Corona Todesfälle
+                        result.append(int(wordList[stateCell+indexDeaths])); dataCount = dataCount + 1
+                    #Hinzufügen des Datums
                     result.append(curDate.strftime("%Y-%m-%d")); dataCount = dataCount + 1
+                    '''
     except Exception as e:
-        #runtimeErrors.append(url)
-        #errorFile.write(url+'\n')
-        #errorFile.write(str(e)+'\n')
         error = 'Fehler beim Scraping: ' + str(e)
-        runtimeErrors = fileHandler(error, url, runtimeErrors)
+        runtimeExceptions = fileHandler(error, url, runtimeExceptions)
         pass
     
     try:
         presentData = result[len(result)-dataCount:len(result)]
         integrityIndex = checkIntegrity(states, pastData, presentData)
-        fileHandler(integrityIndex, url, runtimeErrors)
+        fileHandler(integrityIndex, url, runtimeExceptions)
         pastData = result[len(result)-dataCount:len(result)]
-        '''
-        if len(integrityIndex['errors']) != 0:
-            if url not in runtimeErrors:
-                errorFile.write('"'+url+'",\n')
-                for error in integrityIndex['errors']:
-                    errorFile.write(error+'\n')
-        for data in integrityIndex['validData']:
-            validDataFile.write(data+'\n')
-        if len(integrityIndex['uncertainData']) != 0:
-            errorFile.write('"'+url+'",\n')
-            for data in integrityIndex['uncertainData']:
-                uncertainDataFile.write(data+'\n')
-        '''
     except Exception as e:
-        #runtimeErrors.append(url)
-        #errorFile.write(url+'\n')
-        #errorFile.write(str(e)+'\n')
         error = 'Fehler beim schreiben der Daten: ' + str(e)
-        runtimeErrors = fileHandler(error, url, runtimeErrors)
+        runtimeExceptions = fileHandler(error, url, runtimeExceptions)
         pass
     
 
