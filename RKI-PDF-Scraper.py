@@ -140,13 +140,12 @@ def fileHandler(writeData, url, runtimeExceptions):
     if isinstance(writeData, dict):
         if len(writeData['errors']) != 0:
             if url not in runtimeExceptions:
-                errorFile.write('"'+url+'",\n')
+                errorFile.write(url+'\n')
                 for error in writeData['errors']:
                     errorFile.write(error+'\n')
         for data in writeData['validData']:
             validDataFile.write(data+'\n')
         if len(writeData['uncertainData']) != 0:
-            errorFile.write('"'+url+'",\n')
             for data in writeData['uncertainData']:
                 uncertainDataFile.write(data+'\n')
     else:
@@ -187,33 +186,15 @@ while startDate <= endDate:
             for state in states:
                 stateCell = getCorrectIndex(wordList, state)
                 if stateCell == False:
-                    runtimeExceptions = fileHandler('Es konnte keine passende Seite im PDF gefunden werden', url, runtimeExceptions)
                     continue
                 else:
                     getRelvantData(wordList, curDate, 1, siteData['deathsColumn'])
                     #Es werden immer 4 Einzeldaten hinzugefügt.Deswegen wir der Zähler für die spätere Validierung um 4 erhöht. Bei Fehlenden Daten greift die Exeption also auch kein Zähler.
                     dataCount = dataCount + 4
-                    print(dataCount)
-                    '''
-                    #Hinzufügen des Bundeslands
-                    result.append(wordList[stateCell]); dataCount = dataCount + 1
-                    #Hinzufügen der Corona Fälle
-                    result.append(int(wordList[stateCell+1])); dataCount = dataCount + 1
-                    #Am Anfang wurden noch keine Todesfälle angegeben. Erst ab 17.03.2020 sind Todesfälle enthalten
-                    if curDate < date(2020, 3, 17):
-                        #Hinzufügen der Corona Todesfälle als 0 weil sie noch nicht in den Daten vorhanden sind
-                        result.append(0); dataCount = dataCount + 1
-                    else:
-                        #Hinzufügen der Corona Todesfälle
-                        result.append(int(wordList[stateCell+indexDeaths])); dataCount = dataCount + 1
-                    #Hinzufügen des Datums
-                    result.append(curDate.strftime("%Y-%m-%d")); dataCount = dataCount + 1
-                    '''
     except Exception as e:
         error = 'Fehler beim Scraping: ' + str(e)
         runtimeExceptions = fileHandler(error, url, runtimeExceptions)
         pass
-    
     try:
         presentData = result[len(result)-dataCount:len(result)]
         integrityIndex = checkIntegrity(states, pastData, presentData)
@@ -223,9 +204,8 @@ while startDate <= endDate:
         error = 'Fehler beim schreiben der Daten: ' + str(e)
         runtimeExceptions = fileHandler(error, url, runtimeExceptions)
         pass
-    
-
     startDate += delta
+
 errorFile.close()
 uncertainDataFile.close()
 validDataFile.close()
