@@ -1,4 +1,4 @@
-# RKI-Scraper
+# RKI-Scraping
 In this repository you find two Python-Scrapers which are scraping information about daily covid cases in Germany from the offical website of the German federal government agency and research institute responsible for disease control and prevention Robert Koch Institute (RKI)
 The scripts achive two different objectives and have two different methods to save the data.
 - The scraping of the **live daily** reported covid cases from https://www.rki.de/DE/Content/InfAZ/N/Neuartiges_Coronavirus/Fallzahlen.html and saving them into a **mysql database**
